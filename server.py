@@ -64,10 +64,11 @@ class Server(object):
         address = ('127.0.0.1', self.port)
         self.socket.bind(address)
         self.socket.listen(1)
+        print(f"Server up @ {address[0]}:{self.port}")
 
         self.client_connection, address = self.socket.accept()
 
-    def room_description(self, room_number):
+    def room_description(self, room_number: int) -> str:
         """
         For any room_number in 0, 1, 2, 3, return a string that "describes" that
         room.
@@ -78,10 +79,15 @@ class Server(object):
         :param room_number: int
         :return: str
         """
+        descript = {0: ["white", "So bland in here!"],
+                    1: ["British racing green", "Quite nice."],
+                    2: ["on the floor", "Time to roll up your sleeves "
+                                        "and get to work!"],
+                    3: ["brown", "This room feels old and musty."]}
 
-        # TODO: YOUR CODE HERE
+        room = descript.get(room_number, ['blank'] *2)
 
-        pass
+        return f"The wallpaper is {room[0]}.  {room[1]}"
 
     def greet(self):
         """
@@ -108,9 +114,25 @@ class Server(object):
         :return: None 
         """
 
-        # TODO: YOUR CODE HERE
+        try:
+            incoming_message = self.client_connection.recv(16)
+            while incoming_message:
+                # if we have the end '\n' of transmission, break out
+                if "\n" in incoming_message.decode('utf8'):
+                    break
 
-        pass
+                # keep reading if not at the end
+                # How much is a good buffer size to read at once?
+                incoming_message += self.client_connection.recv(16)
+                print("incoming_message=",incoming_message)
+
+
+            self.input_buffer = incoming_message.decode('utf8')
+        except ConnectionAbortedError:
+            # reset and wait for new connection
+            print("Client connection lost! Resetting!")
+            self.input_buffer = ""
+            self.serve()
 
     def move(self, argument):
         """
@@ -133,11 +155,28 @@ class Server(object):
         :return: None
         """
 
-        # TODO: YOUR CODE HERE
 
-        pass
+        # {room # : { valid direction of travel : destination room}
+        valid_destinations = {0: {"east":  2,
+                                  "west":  1,
+                                  "north": 3},
+                              1: {"east": 0},
+                              2: {"west": 0},
+                              3: {"south": 0},
+                              }
 
-    def say(self, argument):
+        room_directions = valid_destinations.get(self.room)
+
+        # if the argument is the direction key
+        if argument.lower() in room_directions:
+            # set room as the room number from the direction key
+            self.room = room_directions.get(argument.lower())
+            # add room description to output
+            self.output_buffer = self.room_description(self.room)
+        else:
+            self.output_buffer = "There is a wall there!"
+
+    def say(self, argument: str) -> None:
         """
         Lets the client speak by putting their utterance into the output buffer.
         
@@ -150,10 +189,7 @@ class Server(object):
         :param argument: str
         :return: None
         """
-
-        # TODO: YOUR CODE HERE
-
-        pass
+        self.output_buffer = f"You say, '{argument}'"
 
     def quit(self, argument):
         """
@@ -166,10 +202,8 @@ class Server(object):
         :param argument: str
         :return: None
         """
-
-        # TODO: YOUR CODE HERE
-
-        pass
+        self.done = True
+        self.output_buffer = "Goodbye!"
 
     def route(self):
         """
@@ -183,9 +217,33 @@ class Server(object):
         :return: None
         """
 
-        # TODO: YOUR CODE HERE
+        # These are the valid actions and their keywords
+        actions = {"say":  self.say,
+                   "move": self.move,
+                   "quit": self.quit}
 
-        pass
+        # split the action key word and the argument
+        action = self.input_buffer.strip().split(" ",1)[0]
+
+        # try to get the argument, if there is on
+        if " " in self.input_buffer.strip():
+            arg = self.input_buffer.strip().split(" ",1)[1]
+        else:
+            arg = ""
+
+        # reset the input buffer
+        self.input_buffer = ""
+
+        if action in actions:
+            # execute the action
+            actions.get(action)(arg)
+        else:
+            bad_action = "Sorry, I dont understand!\n" \
+                         "Valid responses are:\n" \
+                         "> move [north|south|east|west]\n" \
+                         "> say ...\n" \
+                         "> quit"
+            self.output_buffer = bad_action
 
     def push_output(self):
         """
@@ -197,9 +255,9 @@ class Server(object):
         :return: None 
         """
 
-        # TODO: YOUR CODE HERE
-
-        pass
+        if self.output_buffer:
+            msg = f"OK! {self.output_buffer}\n".encode('utf8')
+            self.client_connection.send(msg)
 
     def serve(self):
         self.connect()
